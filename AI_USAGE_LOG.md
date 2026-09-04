@@ -88,3 +88,14 @@ Registro continuo de decisiones tomadas durante la ejecución asistida por IA (v
 - **Fix aplicado:** corregido el import a `org.springframework.test.web.reactive.server.WebTestClient`.
 - **Decisión:** Ajustado — corregido en la misma rama (`feature/api-gateway`).
 - **Lección:** un "pasa en mi máquina" con caché de Maven no es prueba suficiente por sí sola; CI con entorno limpio sigue siendo la verificación de referencia, incluso cuando el build local también está disponible.
+
+## 2026-09-04 — [Feature] PR — Contrato OpenAPI V2 + generador Base62 (arranque Escenario A / Greenfield)
+
+- **Tarea:** Día 1, Tarea #4 del plan (ARCHITECTURE.md §7) — arranque formal del Escenario A (Greenfield). Alcance explícito de este PR: solo los puntos 1 y 3 de la descomposición de §6 (contrato REST + generador Base62); Redis, Circuit Breaker y la implementación completa del servicio quedan para el Día 2.
+- **Prompt:** "si" (confirmación para avanzar con la Tarea #4 tras mergear el API Gateway).
+- **Generado por IA:**
+  - Módulo `v2-shortener-contract`: contrato OpenAPI 3.0.3 (`src/main/resources/openapi/shortener-v2.yaml`) que documenta los 6 endpoints de la API V2 ya resumidos en ARCHITECTURE.md §4.1 (crear, listar, bulk crear, estado de bulk job, revocar, analytics), con sus schemas de request/response, `bearerAuth` (JWT vía Keycloak) y `RedirectRule` (redirección condicional por tipo de dispositivo, según la desambiguación del Escenario C §6). Se documentó explícitamente que `GET /{shortCode}` (la redirección pública real) queda fuera de este contrato porque no vive bajo `/api/v2` — la resuelve el Gateway.
+  - `Base62CodeGenerator`: generador de códigos con manejo de colisiones más robusto que el de V1 — reintenta hasta 5 veces por longitud (7 a 12 caracteres) y hace fallback a una longitud mayor si se agotan los intentos, en vez de reintentar indefinidamente. Recibe la verificación de colisión como `Predicate<String>` para poder probarse sin base de datos ni Redis (se conecta a la persistencia real en el Día 2).
+  - Tests unitarios (`Base62CodeGeneratorTest`): código sin colisión, reintento antes de crecer de longitud, fallback real a longitud mayor cuando se agota la longitud inicial, y excepción cuando se agotan todas las longitudes.
+- **Riesgo declarado:** mismo patrón que los PRs anteriores — no se pudo compilar/validar localmente en este entorno (sin acceso a Maven Central). El YAML del contrato sí se validó localmente con un parser de YAML (sintácticamente válido), pero no contra un validador de OpenAPI real. La verificación de compilación queda en manos del ingeniero (Codespace) + CI.
+- **Decisión:** pendiente de revisión del ingeniero (ver PR).
