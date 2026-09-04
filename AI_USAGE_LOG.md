@@ -112,3 +112,10 @@ Registro continuo de decisiones tomadas durante la ejecución asistida por IA (v
   - `ARCHITECTURE.md §11` actualizado para reflejar la implementación real (y admitir honestamente que el gate de *performance* sigue siendo manual, no automatizado en CI).
 - **Riesgo declarado:** no se pudo verificar localmente si el ruleset de Checkstyle o SpotBugs pasan contra el código existente (mismo motivo de siempre: sin Maven Central en este entorno). Es la primera vez que se introduce un gate que puede fallar por razones no vistas hasta ahora (bugs de SpotBugs), así que es razonable esperar 1-2 iteraciones de ajuste vía Codespace/CI.
 - **Decisión:** pendiente de revisión del ingeniero (ver PR).
+
+## 2026-09-04 — [Fix] PR #8 — `${maven.multiModuleProjectDirectory}` no resolvía a la raíz del reactor
+
+- **Prompt:** el usuario corrió `mvn verify` desde la raíz y Checkstyle falló buscando `checkstyle.xml` dentro de `v2-shortener-contract/` en vez de la raíz del repo.
+- **Diagnóstico:** `${maven.multiModuleProjectDirectory}` solo se resuelve de forma confiable a la raíz real del reactor si existe una carpeta `.mvn/` en esa raíz (aunque esté vacía); sin ella, en algunos casos se resuelve al `basedir` del módulo que se está construyendo. Este repo no tiene `.mvn/`.
+- **Fix aplicado:** en vez de agregar `.mvn/` como parche, se simplificó a una ruta relativa literal (`../checkstyle.xml`) en el `configLocation`, ya que los 3 módulos actuales están al mismo nivel de anidamiento directamente bajo la raíz. Maven resuelve rutas relativas de plugins contra el `basedir` de cada módulo en ejecución, así que esto funciona igual en los 3 módulos sin depender de una propiedad con comportamiento no obvio.
+- **Decisión:** Ajustado — corregido en la misma rama (`chore/quality-gates`).
