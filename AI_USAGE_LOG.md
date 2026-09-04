@@ -47,3 +47,27 @@ Registro continuo de decisiones tomadas durante la ejecución asistida por IA (v
 - **Fix aplicado:** se abandona la imagen "java" preempaquetada y se compone el ambiente desde `mcr.microsoft.com/devcontainers/base:bookworm` (imagen mínima, sin Node/Yarn de fábrica) + la feature `ghcr.io/devcontainers/features/java:1` (versión 17, con Maven) explícita.
 - **Decisión:** pendiente de confirmación del ingeniero.
 - **Razón:** los dos intentos anteriores asumieron que el problema estaba en la feature de Kubernetes/Docker; el mensaje de error real (no visible hasta que el usuario compartió el log completo) mostró que la causa estaba en una herramienta totalmente ajena (Yarn) empaquetada en la imagen base. Lección: pedir el log completo desde el principio hubiera ahorrado dos iteraciones.
+
+## 2026-09-04 — [Feature] PR — V1 Legacy Monolith mínimo (crear/redirigir, sin auth)
+
+- **Tarea:** Día 1, Tarea #2 del plan (ARCHITECTURE.md §7) — construir el "sistema legacy" mínimo que en Día 2 será intervenido con el escenario Brownfield.
+- **Prompt:** "Si" (confirmación para avanzar con "el V1 Legacy Monolith mínimo (Liquibase + crear/redirigir, sin auth)").
+- **Generado por IA:** módulo Maven `v1-legacy-monolith` completo — `pom.xml` (Spring Boot 3.3.4 vía BOM importado, ya que el padre no es `spring-boot-starter-parent`), entidad JPA `UrlRecord`, `UrlRecordRepository`, `UrlShortenerService` (generador de código con `SecureRandom` + alfabeto alfanumérico + reintento hasta 5 veces ante colisión — deliberadamente simple, no el Base62 con manejo formal de colisiones reservado para V2), `UrlController` (`POST /api/v1/urls` → 201, `GET /{shortCode}` → 301 o 404, sin autenticación), changelogs de Liquibase (`changelog-master.xml` + `changelog-v1.0-init.xml`, tabla `urls` **sin** `expires_at` a propósito), `application.yml` con datasource parametrizado por variables de entorno, y tests: unitarios con Mockito para `UrlShortenerService` (incluye caso de colisión y caso de agotar reintentos) e integración end-to-end con Testcontainers (Postgres real) + MockMvc para `UrlController`.
+- **Nota de riesgo declarada:** este VM de trabajo no tiene acceso a Maven Central ni puede instalar JDK17/Maven localmente (red restringida solo a GitHub/npm), por lo que el código no fue compilado ni probado localmente antes de este commit. La verificación real de compilación y tests ocurre en el pipeline de CI (`build-and-test` en GitHub Actions, que sí corre en runners sin esa restricción). Si CI revela errores, se corrigen con un commit adicional sobre esta misma rama — mismo patrón ya usado para el linter de Markdown.
+- **Decisión:** pendiente de revisión del ingeniero (ver PR).
+
+## 2026-09-04 — [Fix] PR #5 — Falta dependencia de validation (CI + build local)
+
+- **Prompt:** el usuario corrió `mvn verify` en su Codespace (con acceso completo a Maven Central, a diferencia de este entorno de trabajo) y pegó el error real de compilación.
+- **Error real:** `package jakarta.validation.constraints does not exist` / `cannot find symbol: class NotBlank` en `UrlController.java` — se usó la anotación `@NotBlank` sin declarar la dependencia `spring-boot-starter-validation` en el `pom.xml` del módulo.
+- **Fix aplicado:** se agregó `org.springframework.boot:spring-boot-starter-validation` a `v1-legacy-monolith/pom.xml`.
+- **Decisión:** Ajustado — corregido directamente en la misma rama (`feature/v1-legacy-monolith`), sin abrir un PR nuevo.
+- **Razón:** confirma que el flujo previsto (no poder compilar localmente en este VM, dejar la primera verificación real en manos de un entorno con red completa) funcionó como estaba planeado — el error se detectó rápido corriendo `mvn verify` en el Codespace del usuario, sin necesidad de depender de los logs de CI (que además resultaron inaccesibles por la misma restricción de red que afectó a los túneles de Codespaces).
+
+## 2026-09-04 — [Fix] PR #5 — Tests de integración fallaban: falta el flag `-parameters` del compilador
+
+- **Prompt:** el usuario corrió `mvn verify` de nuevo tras el fix anterior; compiló, pero 2 de 6 tests fallaron (`UrlControllerIntegrationTest`) con `IllegalArgumentException: Name for argument of type [java.lang.String] not specified... Ensure that the compiler uses the '-parameters' flag`.
+- **Diagnóstico:** `@PathVariable String shortCode` depende de que el compilador conserve los nombres de parámetros vía reflexión (flag `-parameters` de `javac`). `spring-boot-starter-parent` activa ese flag por defecto, pero este proyecto usa un padre propio (`url-shortener-parent`), así que nunca se configuró.
+- **Fix aplicado:** (1) se agregó `<maven.compiler.parameters>true</maven.compiler.parameters>` a las properties del `pom.xml` raíz, para que todos los módulos futuros lo hereden sin tener que repetirlo; (2) se nombró explícitamente `@PathVariable("shortCode")` en `UrlController` como refuerzo, para no depender únicamente del flag del compilador.
+- **Decisión:** Ajustado — corregido en la misma rama (`feature/v1-legacy-monolith`).
+- **Razón:** el ciclo local (Codespace con Maven real) siguió funcionando como red de verificación rápida; cada corrida de `mvn verify` reveló un problema real distinto, resuelto con un commit incremental.
