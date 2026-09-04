@@ -80,3 +80,11 @@ Registro continuo de decisiones tomadas durante la ejecución asistida por IA (v
 - **Decisión de diseño explícita:** la ruta de `GET /{shortCode}` hoy delega directo a V1 sin consultar Redis, porque el índice de códigos V2 en Redis (descrito en ARCHITECTURE.md §3.1) no tiene sentido hasta que exista el servicio V2 que lo llene. Se documentó en un comentario en `GatewayRoutesConfig` para que quede explícito que es una simplificación temporal, no el diseño final.
 - **Riesgo declarado:** mismo patrón que el PR anterior — no se pudo compilar localmente en este entorno (sin acceso a Maven Central), por lo que la primera verificación real es `mvn verify` corrido por el ingeniero en su Codespace, seguido de CI.
 - **Decisión:** pendiente de revisión del ingeniero (ver PR).
+
+## 2026-09-04 — [Fix] PR #6 — Import incorrecto de WebTestClient (CI falló, local no)
+
+- **Prompt:** el usuario reportó que `mvn verify` le dio BUILD SUCCESS en su Codespace corriendo solo el módulo `api-gateway`, pero el CI del PR #6 falló en compilación de tests con `cannot find symbol: class WebTestClient` en el paquete `org.springframework.boot.test.web.reactive.server`.
+- **Error real:** el import generado (`org.springframework.boot.test.web.reactive.server.WebTestClient`) no existe — es una mezcla incorrecta de dos paquetes reales (`org.springframework.boot.test.web.reactive.server`, que sí existe pero solo contiene clases de auto-configuración, y `org.springframework.test.web.reactive.server`, que es donde realmente vive `WebTestClient`). El BUILD SUCCESS local fue engañoso — probablemente Maven no recompiló el test desde cero o resolvió una clase distinta por caché del repositorio local; el runner de CI, con un `.m2` limpio, expuso el error real de inmediato.
+- **Fix aplicado:** corregido el import a `org.springframework.test.web.reactive.server.WebTestClient`.
+- **Decisión:** Ajustado — corregido en la misma rama (`feature/api-gateway`).
+- **Lección:** un "pasa en mi máquina" con caché de Maven no es prueba suficiente por sí sola; CI con entorno limpio sigue siendo la verificación de referencia, incluso cuando el build local también está disponible.
