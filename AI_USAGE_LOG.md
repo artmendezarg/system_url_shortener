@@ -99,3 +99,16 @@ Registro continuo de decisiones tomadas durante la ejecución asistida por IA (v
   - Tests unitarios (`Base62CodeGeneratorTest`): código sin colisión, reintento antes de crecer de longitud, fallback real a longitud mayor cuando se agota la longitud inicial, y excepción cuando se agotan todas las longitudes.
 - **Riesgo declarado:** mismo patrón que los PRs anteriores — no se pudo compilar/validar localmente en este entorno (sin acceso a Maven Central). El YAML del contrato sí se validó localmente con un parser de YAML (sintácticamente válido), pero no contra un validador de OpenAPI real. La verificación de compilación queda en manos del ingeniero (Codespace) + CI.
 - **Decisión:** pendiente de revisión del ingeniero (ver PR).
+
+## 2026-09-04 — [Hardening] PR — Cerrar el hueco de quality gates (Checkstyle, SpotBugs, Actuator, Dependabot)
+
+- **Origen:** al revisar los 8 "Core Requirements" del brief contra lo entregado, se detectó que `ARCHITECTURE.md §11` **prometía** Checkstyle/SpotBugs (análisis estático), OWASP Dependency-Check (escaneo de dependencias) y Micrometer/Actuator (observabilidad) como parte de `mvn verify`, pero ninguno de los 4 `pom.xml` existentes los tenía configurados. Era documentación desalineada con el código real — el tipo de cosa que un evaluador detecta con un `grep` en segundos.
+- **Prompt:** revisión conjunta de los "Core Requirements" del brief, específicamente el punto 4 ("apply quality gates: analysis, linting, tests, security, performance").
+- **Generado por IA:**
+  - `checkstyle.xml` (ruleset propio en la raíz, deliberadamente acotado: imports no usados, imports con wildcard, tabs, fin de archivo, orden de modificadores — reglas de bajo riesgo de falsos positivos, no un ruleset agresivo tipo Google/Sun que generaría una ola de violaciones de estilo sobre código ya escrito).
+  - `maven-checkstyle-plugin` y `spotbugs-maven-plugin` agregados como `<build><plugins>` (no `<pluginManagement>`) en el `pom.xml` raíz, para que v1, gateway y v2-contract los hereden automáticamente sin repetir configuración.
+  - `spring-boot-starter-actuator` + `micrometer-registry-prometheus` en `v1-legacy-monolith` y `api-gateway` (los dos servicios ejecutables), con `/actuator/health`, `/actuator/info`, `/actuator/prometheus` expuestos.
+  - **Decisión de diseño explícita:** se reemplazó OWASP Dependency-Check (plan original en ARCHITECTURE.md) por **GitHub Dependabot** (`.github/dependabot.yml` + vulnerability alerts habilitadas vía API). Razón: Dependency-Check depende de la NVD API, que sin una API key registrada aplica rate-limit agresivo y puede volver el job de CI lento/inestable — mal encaje para un pipeline que corre en cada PR de un ejercicio con tiempo acotado.
+  - `ARCHITECTURE.md §11` actualizado para reflejar la implementación real (y admitir honestamente que el gate de *performance* sigue siendo manual, no automatizado en CI).
+- **Riesgo declarado:** no se pudo verificar localmente si el ruleset de Checkstyle o SpotBugs pasan contra el código existente (mismo motivo de siempre: sin Maven Central en este entorno). Es la primera vez que se introduce un gate que puede fallar por razones no vistas hasta ahora (bugs de SpotBugs), así que es razonable esperar 1-2 iteraciones de ajuste vía Codespace/CI.
+- **Decisión:** pendiente de revisión del ingeniero (ver PR).
