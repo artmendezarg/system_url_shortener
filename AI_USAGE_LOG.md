@@ -138,3 +138,11 @@ Registro continuo de decisiones tomadas durante la ejecución asistida por IA (v
   - Creé los 3 labels (`ai:accepted`, `ai:adjusted`, `ai:rejected`) y los apliqué retroactivamente: PR #5 → `ai:adjusted`, PR #6 → `ai:adjusted`, PR #7 → `ai:accepted`, PR #8 → `ai:adjusted`.
   - Agregué `ARCHITECTURE.md §8.2 "Secure AI Usage"`, consolidando: sin credenciales reales, sin acceso a infraestructura de producción, entorno de ejecución de la IA con red restringida (honesto: no es una medida diseñada para este proyecto, es una propiedad del sandbox, pero es real y vale la pena declararla), secret scanning, Dependabot, y el detalle verificado de branch protection + least privilege del token del bot.
 - **Decisión:** pendiente de revisión del ingeniero (ver PR).
+
+## 2026-09-04 — [Feature] PR — Brownfield V1, paso 1: characterization tests (antes de tocar código)
+
+- **Tarea:** Día 2, Tarea #5 del plan — arranque del Escenario B (Brownfield, ver ARCHITECTURE.md §6). Primer commit de esta rama, deliberadamente separado del cambio real: solo agrega `UrlBrownfieldCharacterizationTest`, que congela el comportamiento ACTUAL de V1 (sin ningún concepto de expiración todavía) antes de que el siguiente commit agregue `expires_at`.
+- **Prompt:** "Sí, arrancar con Tarea #5" (confirmación para iniciar el Día 2 con el escenario Brownfield).
+- **Generado por IA:** `UrlBrownfieldCharacterizationTest` — 3 tests: creación sin campo de expiración devuelve exactamente la forma actual del JSON; redirección para una fila "pre-existente" (insertada directo por repositorio, simulando datos anteriores a esta tarea) devuelve 301 con la URL original; código desconocido devuelve 404.
+- **Decisión de diseño explícita:** el criterio de éxito de todo el Escenario B es que estos tests **sigan pasando sin modificarse** después de agregar `expires_at` en el siguiente commit — si alguno necesita cambiar para seguir en verde, es señal de una regresión real, no solo de un test desactualizado.
+- **Decisión:** pendiente de que el ingeniero confirme que estos tests pasan contra el código ACTUAL (checkpoint "antes"), antes de aplicar el cambio real de Brownfield en el siguiente commit.
