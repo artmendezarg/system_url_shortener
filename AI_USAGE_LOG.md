@@ -63,3 +63,11 @@ Registro continuo de decisiones tomadas durante la ejecución asistida por IA (v
 - **Fix aplicado:** se agregó `org.springframework.boot:spring-boot-starter-validation` a `v1-legacy-monolith/pom.xml`.
 - **Decisión:** Ajustado — corregido directamente en la misma rama (`feature/v1-legacy-monolith`), sin abrir un PR nuevo.
 - **Razón:** confirma que el flujo previsto (no poder compilar localmente en este VM, dejar la primera verificación real en manos de un entorno con red completa) funcionó como estaba planeado — el error se detectó rápido corriendo `mvn verify` en el Codespace del usuario, sin necesidad de depender de los logs de CI (que además resultaron inaccesibles por la misma restricción de red que afectó a los túneles de Codespaces).
+
+## 2026-09-04 — [Fix] PR #5 — Tests de integración fallaban: falta el flag `-parameters` del compilador
+
+- **Prompt:** el usuario corrió `mvn verify` de nuevo tras el fix anterior; compiló, pero 2 de 6 tests fallaron (`UrlControllerIntegrationTest`) con `IllegalArgumentException: Name for argument of type [java.lang.String] not specified... Ensure that the compiler uses the '-parameters' flag`.
+- **Diagnóstico:** `@PathVariable String shortCode` depende de que el compilador conserve los nombres de parámetros vía reflexión (flag `-parameters` de `javac`). `spring-boot-starter-parent` activa ese flag por defecto, pero este proyecto usa un padre propio (`url-shortener-parent`), así que nunca se configuró.
+- **Fix aplicado:** (1) se agregó `<maven.compiler.parameters>true</maven.compiler.parameters>` a las properties del `pom.xml` raíz, para que todos los módulos futuros lo hereden sin tener que repetirlo; (2) se nombró explícitamente `@PathVariable("shortCode")` en `UrlController` como refuerzo, para no depender únicamente del flag del compilador.
+- **Decisión:** Ajustado — corregido en la misma rama (`feature/v1-legacy-monolith`).
+- **Razón:** el ciclo local (Codespace con Maven real) siguió funcionando como red de verificación rápida; cada corrida de `mvn verify` reveló un problema real distinto, resuelto con un commit incremental.
