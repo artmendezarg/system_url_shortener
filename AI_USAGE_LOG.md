@@ -31,3 +31,11 @@ Registro continuo de decisiones tomadas durante la ejecución asistida por IA (v
 - **Diagnóstico real (segunda vuelta):** con más detalle del log, se confirmó que la feature que fallaba era `docker-in-docker` — su script de instalación corre `apt-get install` para un daemon Docker anidado completo, y ese `apt-get` fallaba con exit code 100 (genérico de apt) dentro de la imagen base `java:1-17-bullseye`.
 - **Fix aplicado:** se reemplazó `docker-in-docker` por `docker-outside-of-docker`, que monta el socket del Docker que el propio Codespace ya corre por debajo, en vez de instalar un daemon anidado — mismo resultado funcional (poder correr `docker`/`kind`) con muchas menos piezas y sin el `apt-get` problemático.
 - **Razón:** el primer diagnóstico fue por descarte razonable con información incompleta del log; en cuanto el usuario compartió el bloque de error con el comando exacto que fallaba dentro del build de la feature, se pudo identificar la causa real en vez de seguir adivinando.
+
+## 2026-09-04 — [Infraestructura] PR #4 — Tercer intento: la imagen base, no la feature
+
+- **Prompt:** reporte del usuario: tras cambiar a `docker-outside-of-docker`, el mismo error exit code 100 en `apt-get` durante el install script de la feature.
+- **Diagnóstico:** dos features distintas (`docker-in-docker` y `docker-outside-of-docker`) fallando con el mismo error de `apt-get` descarta que el problema sea de una feature específica — apunta a la imagen base. `mcr.microsoft.com/devcontainers/java:1-17-bullseye` usa Debian 11, cuyos repositorios estándar de apt probablemente ya no están activos para esta fecha (movidos a archive-only), rompiendo cualquier `apt-get install` dentro del build de features.
+- **Fix aplicado:** cambio de imagen base a `mcr.microsoft.com/devcontainers/java:1-17-bookworm` (Debian 12, repositorios activos), conservando `docker-outside-of-docker`.
+- **Decisión:** pendiente de confirmación del ingeniero.
+- **Razón:** cambiar de feature sin cambiar la imagen base habría repetido el mismo síntoma con cualquier otra feature basada en apt — el patrón de dos fallos idénticos con causas distintas señaladas era la pista de que el problema estaba un nivel más abajo.
