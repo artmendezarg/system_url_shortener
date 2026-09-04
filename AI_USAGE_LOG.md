@@ -127,3 +127,14 @@ Registro continuo de decisiones tomadas durante la ejecución asistida por IA (v
 - **Fix aplicado:** se agregó `.mvn/` (vacía, con `.gitkeep`) en la raíz del repo y se revirtió `configLocation` a `\${maven.multiModuleProjectDirectory}/checkstyle.xml`. Con `.mvn/` presente, esa propiedad se fija una sola vez para toda la sesión de Maven (no varía por módulo), así que resuelve igual para el agregador y para los 3 módulos hijo.
 - **Decisión:** Ajustado — segunda vuelta sobre el mismo problema en la rama `chore/quality-gates`.
 - **Lección:** el primer fix resolvió el síntoma observado sin diagnosticar la causa raíz documentada de \`maven.multiModuleProjectDirectory\`, lo cual generó una segunda iteración evitable.
+
+## 2026-09-04 — [Hardening] PR — Cerrar el hueco de "enforce secure AI usage" + etiquetas de PR
+
+- **Origen:** el ingeniero pidió revalidar específicamente el punto "enforce secure AI usage" del brief. Al revisar qué había, encontré dos cosas: (1) los controles de seguridad reales ya existían (branch protection, secret scanning, sin credenciales reales) pero estaban dispersos entre §5 y §8.1 sin una sección que los consolidara explícitamente como respuesta a este punto; (2) un hueco real idéntico al de quality gates: `ARCHITECTURE.md §8.1` prometía labels `ai:accepted`/`ai:rejected`/`ai:adjusted` en los PRs, pero esos labels nunca se crearon ni se aplicaron a ninguno de los 4 PRs existentes.
+- **Prompt:** "vuelve a validar, como forzamos este punto: enforce secure AI usage".
+- **Generado por IA / Ejecutado directamente:**
+  - Verifiqué (no asumí) el estado real de la protección de `main` vía `GET /repos/.../branches/main/protection`: `enforce_admins: true`, `required_approving_review_count: 1`, `dismiss_stale_reviews: true`, `allow_force_pushes: false` — todo tal como estaba documentado, esta vez confirmado con la API en vez de solo con la palabra de un PR pasado.
+  - Verifiqué los scopes reales del token de `art-claude-dev` (`repo`, `read:org`, `workflow`, sin `admin`) y sus permisos de colaborador (`admin: false`) contra el repo.
+  - Creé los 3 labels (`ai:accepted`, `ai:adjusted`, `ai:rejected`) y los apliqué retroactivamente: PR #5 → `ai:adjusted`, PR #6 → `ai:adjusted`, PR #7 → `ai:accepted`, PR #8 → `ai:adjusted`.
+  - Agregué `ARCHITECTURE.md §8.2 "Secure AI Usage"`, consolidando: sin credenciales reales, sin acceso a infraestructura de producción, entorno de ejecución de la IA con red restringida (honesto: no es una medida diseñada para este proyecto, es una propiedad del sandbox, pero es real y vale la pena declararla), secret scanning, Dependabot, y el detalle verificado de branch protection + least privilege del token del bot.
+- **Decisión:** pendiente de revisión del ingeniero (ver PR).
