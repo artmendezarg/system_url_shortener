@@ -39,3 +39,11 @@ Registro continuo de decisiones tomadas durante la ejecución asistida por IA (v
 - **Fix aplicado:** cambio de imagen base a `mcr.microsoft.com/devcontainers/java:1-17-bookworm` (Debian 12, repositorios activos), conservando `docker-outside-of-docker`.
 - **Decisión:** pendiente de confirmación del ingeniero.
 - **Razón:** cambiar de feature sin cambiar la imagen base habría repetido el mismo síntoma con cualquier otra feature basada en apt — el patrón de dos fallos idénticos con causas distintas señaladas era la pista de que el problema estaba un nivel más abajo.
+
+## 2026-09-04 — [Infraestructura] PR #4 — Causa raíz encontrada: repo de apt de Yarn roto en la imagen "java"
+
+- **Prompt:** reporte del usuario con el log completo mostrando `E: The repository 'https://dl.yarnpkg.com/debian stable InRelease' is not signed.`
+- **Diagnóstico real:** la imagen `mcr.microsoft.com/devcontainers/java:*` trae preconfigurado un repositorio apt de Yarn cuya firma ya no es válida (Yarn deprecó ese repo clásico). Eso rompe `apt-get update` dentro de esa imagen para cualquier feature que dependa de apt — por eso fallaban tanto `docker-in-docker` como `docker-outside-of-docker`, y por eso cambiar de bullseye a bookworm no ayudó (el problema no era la versión de Debian).
+- **Fix aplicado:** se abandona la imagen "java" preempaquetada y se compone el ambiente desde `mcr.microsoft.com/devcontainers/base:bookworm` (imagen mínima, sin Node/Yarn de fábrica) + la feature `ghcr.io/devcontainers/features/java:1` (versión 17, con Maven) explícita.
+- **Decisión:** pendiente de confirmación del ingeniero.
+- **Razón:** los dos intentos anteriores asumieron que el problema estaba en la feature de Kubernetes/Docker; el mensaje de error real (no visible hasta que el usuario compartió el log completo) mostró que la causa estaba en una herramienta totalmente ajena (Yarn) empaquetada en la imagen base. Lección: pedir el log completo desde el principio hubiera ahorrado dos iteraciones.
