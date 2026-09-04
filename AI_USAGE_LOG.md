@@ -99,3 +99,31 @@ Registro continuo de decisiones tomadas durante la ejecución asistida por IA (v
   - Tests unitarios (`Base62CodeGeneratorTest`): código sin colisión, reintento antes de crecer de longitud, fallback real a longitud mayor cuando se agota la longitud inicial, y excepción cuando se agotan todas las longitudes.
 - **Riesgo declarado:** mismo patrón que los PRs anteriores — no se pudo compilar/validar localmente en este entorno (sin acceso a Maven Central). El YAML del contrato sí se validó localmente con un parser de YAML (sintácticamente válido), pero no contra un validador de OpenAPI real. La verificación de compilación queda en manos del ingeniero (Codespace) + CI.
 - **Decisión:** pendiente de revisión del ingeniero (ver PR).
+
+## 2026-09-04 — [Hardening] PR — Cerrar el hueco de quality gates (Checkstyle, SpotBugs, Actuator, Dependabot)
+
+- **Origen:** al revisar los 8 "Core Requirements" del brief contra lo entregado, se detectó que `ARCHITECTURE.md §11` **prometía** Checkstyle/SpotBugs (análisis estático), OWASP Dependency-Check (escaneo de dependencias) y Micrometer/Actuator (observabilidad) como parte de `mvn verify`, pero ninguno de los 4 `pom.xml` existentes los tenía configurados. Era documentación desalineada con el código real — el tipo de cosa que un evaluador detecta con un `grep` en segundos.
+- **Prompt:** revisión conjunta de los "Core Requirements" del brief, específicamente el punto 4 ("apply quality gates: analysis, linting, tests, security, performance").
+- **Generado por IA:**
+  - `checkstyle.xml` (ruleset propio en la raíz, deliberadamente acotado: imports no usados, imports con wildcard, tabs, fin de archivo, orden de modificadores — reglas de bajo riesgo de falsos positivos, no un ruleset agresivo tipo Google/Sun que generaría una ola de violaciones de estilo sobre código ya escrito).
+  - `maven-checkstyle-plugin` y `spotbugs-maven-plugin` agregados como `<build><plugins>` (no `<pluginManagement>`) en el `pom.xml` raíz, para que v1, gateway y v2-contract los hereden automáticamente sin repetir configuración.
+  - `spring-boot-starter-actuator` + `micrometer-registry-prometheus` en `v1-legacy-monolith` y `api-gateway` (los dos servicios ejecutables), con `/actuator/health`, `/actuator/info`, `/actuator/prometheus` expuestos.
+  - **Decisión de diseño explícita:** se reemplazó OWASP Dependency-Check (plan original en ARCHITECTURE.md) por **GitHub Dependabot** (`.github/dependabot.yml` + vulnerability alerts habilitadas vía API). Razón: Dependency-Check depende de la NVD API, que sin una API key registrada aplica rate-limit agresivo y puede volver el job de CI lento/inestable — mal encaje para un pipeline que corre en cada PR de un ejercicio con tiempo acotado.
+  - `ARCHITECTURE.md §11` actualizado para reflejar la implementación real (y admitir honestamente que el gate de *performance* sigue siendo manual, no automatizado en CI).
+- **Riesgo declarado:** no se pudo verificar localmente si el ruleset de Checkstyle o SpotBugs pasan contra el código existente (mismo motivo de siempre: sin Maven Central en este entorno). Es la primera vez que se introduce un gate que puede fallar por razones no vistas hasta ahora (bugs de SpotBugs), así que es razonable esperar 1-2 iteraciones de ajuste vía Codespace/CI.
+- **Decisión:** pendiente de revisión del ingeniero (ver PR).
+
+## 2026-09-04 — [Fix] PR #8 — `${maven.multiModuleProjectDirectory}` no resolvía a la raíz del reactor
+
+- **Prompt:** el usuario corrió `mvn verify` desde la raíz y Checkstyle falló buscando `checkstyle.xml` dentro de `v2-shortener-contract/` en vez de la raíz del repo.
+- **Diagnóstico:** `${maven.multiModuleProjectDirectory}` solo se resuelve de forma confiable a la raíz real del reactor si existe una carpeta `.mvn/` en esa raíz (aunque esté vacía); sin ella, en algunos casos se resuelve al `basedir` del módulo que se está construyendo. Este repo no tiene `.mvn/`.
+- **Fix aplicado:** en vez de agregar `.mvn/` como parche, se simplificó a una ruta relativa literal (`../checkstyle.xml`) en el `configLocation`, ya que los 3 módulos actuales están al mismo nivel de anidamiento directamente bajo la raíz. Maven resuelve rutas relativas de plugins contra el `basedir` de cada módulo en ejecución, así que esto funciona igual en los 3 módulos sin depender de una propiedad con comportamiento no obvio.
+- **Decisión:** Ajustado — corregido en la misma rama (`chore/quality-gates`).
+
+## 2026-09-04 — [Fix] PR #8 — El fix anterior (ruta relativa) rompía el propio módulo raíz
+
+- **Prompt:** CI volvió a fallar tras el fix anterior, esta vez en el módulo raíz (`url-shortener-parent`) mismo: `../checkstyle.xml` no se encuentra porque el `basedir` del agregador YA es la raíz del repo, así que `../` se sale del repo. La ruta relativa resolvía bien para los módulos hijo pero rompía el agregador, que también ejecuta la misma verificación de Checkstyle (packaging `pom`, sin código, pero la ejecución igual corre).
+- **Diagnóstico correcto:** el problema real de origen (`${maven.multiModuleProjectDirectory}` resolviendo al `basedir` del módulo en construcción en vez de la raíz real del reactor) tiene una causa documentada: esa propiedad solo se resuelve de forma confiable a la raíz si existe una carpeta `.mvn/` ahí (aunque esté vacía). Sin ella, cae en un comportamiento no confiable. El primer "fix" (ruta relativa) fue un parche que no atacaba la causa raíz y por eso rompió un caso distinto.
+- **Fix aplicado:** se agregó `.mvn/` (vacía, con `.gitkeep`) en la raíz del repo y se revirtió `configLocation` a `\${maven.multiModuleProjectDirectory}/checkstyle.xml`. Con `.mvn/` presente, esa propiedad se fija una sola vez para toda la sesión de Maven (no varía por módulo), así que resuelve igual para el agregador y para los 3 módulos hijo.
+- **Decisión:** Ajustado — segunda vuelta sobre el mismo problema en la rama `chore/quality-gates`.
+- **Lección:** el primer fix resolvió el síntoma observado sin diagnosticar la causa raíz documentada de \`maven.multiModuleProjectDirectory\`, lo cual generó una segunda iteración evitable.
