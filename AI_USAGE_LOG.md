@@ -22,3 +22,10 @@ Registro continuo de decisiones tomadas durante la ejecución asistida por IA (v
 - **Generado por IA:** `.devcontainer/devcontainer.json` (Java 17 + Docker-in-Docker + kubectl/helm), `docker-compose.yml` (Postgres/Redis/RabbitMQ/Keycloak con healthchecks), `pom.xml` raíz como agregador multi-módulo (sin módulos todavía), `.env.example`.
 - **Decisión:** pendiente de revisión del ingeniero (ver PR).
 - **Nota de riesgo declarada:** la instalación de `kind` en el devcontainer vía `postCreateCommand` no se ha probado en una ejecución real de Codespaces todavía — la IA lo señaló explícitamente en un comentario dentro del propio `devcontainer.json` en vez de presentarlo como verificado.
+
+## 2026-09-04 — [Infraestructura] PR — Fix del devcontainer (Codespace en recovery mode)
+
+- **Prompt:** reporte del usuario: "Failed to create container... Error code: 1302 (UnifiedContainersErrorFatalCreatingContainer)" al abrir el Codespace por primera vez.
+- **Generado por IA:** confirmó el riesgo que ya había declarado (instalación de Kubernetes tooling sin verificar) se materializó. Se reemplazó la feature `ghcr.io/devcontainers/features/kubectl-helm-minikube:1` (sospechosa principal, la menos estándar de las dos features usadas) por un script propio (`.devcontainer/setup.sh`) que instala kubectl, kind y helm con binarios/scripts oficiales. Se conservó `docker-in-docker` por ser la feature más probada.
+- **Decisión:** pendiente de que el ingeniero confirme que el rebuild del Codespace funciona.
+- **Razón:** el log de creación del Codespace no expuso la causa raíz exacta del fallo de build de las features (solo el comando de `docker buildx build` que falló, sin el output del build en sí) — en vez de iterar a ciegas por capturas de pantalla, se optó por reducir la superficie de piezas con comportamiento no verificado.
