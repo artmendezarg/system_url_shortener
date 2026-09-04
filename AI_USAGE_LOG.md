@@ -71,3 +71,12 @@ Registro continuo de decisiones tomadas durante la ejecución asistida por IA (v
 - **Fix aplicado:** (1) se agregó `<maven.compiler.parameters>true</maven.compiler.parameters>` a las properties del `pom.xml` raíz, para que todos los módulos futuros lo hereden sin tener que repetirlo; (2) se nombró explícitamente `@PathVariable("shortCode")` en `UrlController` como refuerzo, para no depender únicamente del flag del compilador.
 - **Decisión:** Ajustado — corregido en la misma rama (`feature/v1-legacy-monolith`).
 - **Razón:** el ciclo local (Codespace con Maven real) siguió funcionando como red de verificación rápida; cada corrida de `mvn verify` reveló un problema real distinto, resuelto con un commit incremental.
+
+## 2026-09-04 — [Feature] PR — API Gateway básico (Spring Cloud Gateway)
+
+- **Tarea:** Día 1, Tarea #3 del plan (ARCHITECTURE.md §7) — punto de entrada único, patrón Strangler Fig.
+- **Prompt:** "si" (confirmación para avanzar con "API Gateway básico" tras mergear el V1 Legacy Monolith).
+- **Generado por IA:** módulo Maven `api-gateway` (Spring Cloud Gateway 2023.0.3 sobre Spring Boot 3.3.4). Dos rutas activas: `/api/v1/**` → Monolito V1 tal cual, y `GET /{shortCode}` (redirect público sin prefijo) → Monolito V1. `/api/v2/**` responde `501 Not Implemented` vía un stub explícito (`V2StubController`) en lugar de un 404 genérico, porque el servicio V2 todavía no existe (arranca en la Tarea #4). Test de integración con un servidor HTTP fake (`com.sun.net.httpserver.HttpServer`, del JDK, para no sumar una dependencia de mocking solo para esto) que verifica que ambas rutas reales llegan al backend correcto y que `/api/v2/**` devuelve 501.
+- **Decisión de diseño explícita:** la ruta de `GET /{shortCode}` hoy delega directo a V1 sin consultar Redis, porque el índice de códigos V2 en Redis (descrito en ARCHITECTURE.md §3.1) no tiene sentido hasta que exista el servicio V2 que lo llene. Se documentó en un comentario en `GatewayRoutesConfig` para que quede explícito que es una simplificación temporal, no el diseño final.
+- **Riesgo declarado:** mismo patrón que el PR anterior — no se pudo compilar localmente en este entorno (sin acceso a Maven Central), por lo que la primera verificación real es `mvn verify` corrido por el ingeniero en su Codespace, seguido de CI.
+- **Decisión:** pendiente de revisión del ingeniero (ver PR).
