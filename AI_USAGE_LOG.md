@@ -174,3 +174,10 @@ Registro continuo de decisiones tomadas durante la ejecución asistida por IA (v
 - **No modificado:** `UrlRecord`, `UrlShortenerService` y sus tests, y las 3 clases de prueba de integración/caracterización previas — la mensajería se mantuvo enteramente en la capa de controlador para no tocar la capa de servicio ya congelada por la disciplina de characterization testing de la Tarea #5.
 - **Riesgo declarado:** no se pudo compilar/ejecutar localmente en este entorno (sin Maven/JDK 17/Docker); verificación vía Codespace + CI, igual que siempre. Riesgo específico nuevo: es la primera vez que se agrega una dependencia de infraestructura (RabbitMQ) a un módulo que antes solo dependía de Postgres — el diseño de "no declarar la cola" es la mitigación explícita para que esto no rompa el contexto de Spring en pruebas sin broker, pero vale la pena que el ingeniero confirme que efectivamente `UrlBrownfieldCharacterizationTest` y las demás siguen en verde sin cambios.
 - **Decisión:** pendiente de revisión del ingeniero (ver PR).
+
+## 2026-09-04 — [Fix] PR #20 — Import incorrecto de `@TestConfiguration`
+
+- **Prompt:** el usuario corrió `mvn verify` (vía CI, error pegado directamente) y compilación de tests falló: `cannot find symbol: class TestConfiguration, location: package org.springframework.test.context` en `ClickEventPublishingIntegrationTest`.
+- **Diagnóstico:** import incorrecto — `@TestConfiguration` vive en `org.springframework.boot.test.context.TestConfiguration` (Spring Boot Test), no en `org.springframework.test.context` (Spring Framework Test, donde sí viven `@DynamicPropertySource`/`DynamicPropertyRegistry`, que por eso no fallaron). Un error de mezclar dos paquetes con nombres de clase parecidos entre Spring Framework y Spring Boot.
+- **Fix aplicado:** corregido el import a `org.springframework.boot.test.context.TestConfiguration`.
+- **Decisión:** Ajustado — corregido en la misma rama (`feature/click-events-rabbitmq`).
