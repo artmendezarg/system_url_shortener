@@ -1,0 +1,23 @@
+# Build output
+target/
+build/
+*.class
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# OS
+.DS_Store
+
+# Env / secrets — nunca comitear
+.env
+.env.*
+*.pem
+*.key
+application-local.yml
+application-local.properties
+
+# Logs
+*.log
