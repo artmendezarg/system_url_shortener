@@ -419,3 +419,117 @@ Continuous log of decisions made during AI-assisted execution (see template and 
 - **What the single failure was:** not a missing dependency or an unmocked bean, but a wrong belief about Resilience4j — that `ignore-exceptions` keeps an exception away from the `fallbackMethod`. It does not; it only keeps the breaker from recording it. That belief was written into the Javadoc, the commit message and this log as a *mitigation* before any test asserted it, which is exactly how it shipped broken.
 - **Lesson worth keeping:** a risk that has been documented is not a risk that has been mitigated. The Task #11 entry above describes this precise failure mode confidently and in detail, and the code still had the bug — what caught it was `RateLimiterTest` going through the real Spring proxy, where the aspect actually runs. A plain unit test over `new RateLimiter(...)` would have passed while production let every rate-limited caller straight through. Where a behavior depends on framework wiring rather than on the class's own code, the test has to exercise the wiring, or it is testing something else.
 - **Decision:** pending engineer review (see PR). `mergeStateStatus` is `BLOCKED` on review approval only — `mergeable: MERGEABLE`, `reviewDecision: REVIEW_REQUIRED`.
+
+## 2026-09-05 — [Feature] PR — Kubernetes manifests deployed to kind (Day 3, "manifiestos de K8s desplegados en kind dentro de Codespaces")
+
+- **Task:** ARCHITECTURE.md section 7's Day 3 must-ship list, the item right after Task #11
+  ("validación anti-open-redirect y rate limiting"): "manifiestos de K8s desplegados en kind
+  dentro de Codespaces". No task number is assigned to it explicitly in ARCHITECTURE.md, but
+  following the same sequential numbering already used for the items around it (#10 Bulk
+  Processor, #11 rate limiting), this is referred to as Task #12 in this entry and the PR title.
+  Branch `feature/k8s-kind-deployment`, from `main` at `da160dd` (PR #29/Task #11's merge commit).
+- **Prompt:** "si", confirming to proceed with Kubernetes/kind after PR #29 was independently
+  verified merged into `main` (same three-level check as every previous task: PR state, file
+  presence, CI success on the push event).
+- **Researched first:** no `infra/k8s/` or Dockerfiles existed yet. Read `.devcontainer/
+  devcontainer.json` and `.devcontainer/setup.sh` (kubectl/kind/helm already installed there, with
+  setup.sh's own comment explaining why as direct binaries instead of a devcontainer feature --
+  that feature failed to build in the devcontainer's first version), `docker-compose.yml` (the
+  exact dev-only credentials and images to mirror), and every module's `application.yml` --
+  confirmed all five are already fully parameterized via env vars with `localhost` defaults
+  (`DB_HOST`, `REDIS_HOST`, `RABBITMQ_HOST`, `KEYCLOAK_ISSUER_URI`, ...), so no application code
+  needed to change for Kubernetes at all, only how those env vars are set at deploy time.
+- **A real, pre-existing gap found and explicitly scoped OUT:** `api-gateway`'s
+  `GatewayRoutesConfig`/`V2StubController` (Day 1, Task #3) still return `501 Not Implemented` for
+  `/api/v2/**` -- they were never updated once `v2-shortener-service` actually came to exist in
+  Task #4 onward. This is not something this PR introduces or is meant to fix; it changes how the
+  system is deployed, not what it does. `infra/k8s/` exposes `v2-shortener-service` directly for
+  V2 traffic instead of routing it through the Gateway, mirroring exactly how V2 is already
+  exercised via Postman/curl today. Declared here and in `infra/k8s/README.md` rather than left
+  for a reviewer to discover by getting a confusing 501 through the Gateway.
+- **AI-generated:**
+  - **One shared, parameterized `Dockerfile`** (`--build-arg MODULE=<name>`) at the repo root for
+    all five Spring Boot modules, instead of five near-duplicates -- see its own header comment
+    for the full reasoning (multi-stage: `maven:3.9-eclipse-temurin-17` build stage using `-am` to
+    resolve reactor dependencies like `v2-shortener-contract`, `-DskipTests` since this project's
+    CI already tested this exact code on the PR that merged it to `main`; `eclipse-temurin:
+    17-jre-alpine` runtime stage, non-root user).
+  - **`infra/k8s/`**: a dedicated `url-shortener` namespace; three `Secret`s holding the same
+    non-real dev credentials already declared in `docker-compose.yml`/ARCHITECTURE.md section 8.2
+    (`stringData`, not hand-computed base64, so they stay directly comparable to
+    `docker-compose.yml`'s own `environment:` blocks); Postgres/Redis/RabbitMQ/Keycloak as their
+    own Deployments+Services inside the cluster (not reusing the host's `docker-compose` --
+    self-contained, no cross-Docker-network reachability problem to solve); and the five app
+    Deployments+Services, each wired to those via Service DNS names through the exact same env
+    vars `docker-compose`-based local dev already uses.
+  - **Postgres uses `emptyDir`, not a `PersistentVolumeClaim`** -- already an accepted, declared
+    limitation in ARCHITECTURE.md section 13 ("sin almacenamiento persistente en el clúster local
+    kind/k3d"), not a new decision made here.
+  - **RabbitMQ gets a dedicated, non-`guest` user** (`RABBITMQ_DEFAULT_USER`/`_PASS` from the
+    Secret) -- the exact same `loopback_users` restriction this project hit and fixed twice before
+    in Testcontainers (PR #20, PR #26's `RabbitMQContainer.withUser(...)` entries) applies here
+    too: a connection from a different pod is never loopback from the broker's perspective.
+  - **`KC_HOSTNAME=keycloak` on the Keycloak Deployment** -- the one deliberate divergence from
+    `docker-compose.yml`'s Keycloak config (which sets no `KC_HOSTNAME` at all). `docker-compose`
+    gets away with request-based hostname resolution because both a human/Postman AND the resource
+    server (run directly on the Codespace host in that setup) reach Keycloak through the identical
+    URL (`localhost:8081`). Inside the cluster that stops being true: `v2-shortener-service`
+    reaches Keycloak via the Service DNS name `keycloak`, while an external caller reaches it via
+    kind's `extraPortMapping` on `localhost:8081` -- two different URLs for the same server.
+    Fixing `KC_HOSTNAME` to a plain hostname makes Keycloak's hostname v2 provider stamp that same
+    canonical URL as the `iss` claim on every token regardless of which URL a client used to
+    request it, so `v2-shortener-service`'s `issuer-uri` check keeps matching either way. Recorded
+    here in detail because it is easy to get backwards (setting `KC_HOSTNAME` to the *external*
+    `localhost:8081` instead would make the resource server's own in-cluster issuer check fail).
+  - **Liveness/readiness probes use `/actuator/health/liveness` and `/actuator/health/readiness`**
+    on all five app Deployments, not the plain aggregate `/actuator/health` -- Spring Boot
+    auto-enables those two health groups the moment it detects it is running on Kubernetes (via
+    the `KUBERNETES_SERVICE_HOST`/`_PORT` env vars the API server injects into every pod
+    automatically), so this needed no `application.yml` change, only pointing the probes at the
+    right paths. Using the plain aggregate health check for liveness would have been a mistake: a
+    transient RabbitMQ/Redis blip would then roll the app's own liveness status to `DOWN` and get
+    kubelet to restart a perfectly healthy application pod over an external dependency hiccup --
+    exactly the kind of collateral-damage failure mode this project has already hit once with
+    Resilience4j's shared circuit breaker (see PR #29's log entries above) and is worth avoiding
+    here on the same principle.
+  - **`kind-config.yaml` maps 3 host ports via `extraPortMappings`** (`8081`/`8082`/`8084`, fixed
+    `NodePort`s on the Keycloak/api-gateway/v2-shortener-service Services) to the exact same 3
+    ports `docker-compose.yml` and the (still-to-be-written) Postman collection already use, so
+    pointing at `localhost` works identically whether the stack is running via `docker-compose` or
+    inside `kind`.
+  - **`infra/k8s/deploy-to-kind.sh`**: builds and loads all five images, generates the Keycloak
+    realm-import `ConfigMap` directly from `infra/keycloak/realm-export.json` (the same file
+    `docker-compose.yml` already mounts, via `kubectl create configmap --from-file`, not a
+    hand-copied duplicate of its JSON inside a YAML file that could silently drift), applies every
+    manifest, and waits for each `Deployment` to become available. Idempotent, documented as such.
+  - **Docs:** `infra/k8s/README.md` (deploy, external access table, the Gateway limitation above,
+    design decisions, troubleshooting, teardown). ARCHITECTURE.md section 9 rewritten to point at
+    the real script instead of the original 2-line sketch, which never accounted for building
+    images at all; also fixed a stale inaccuracy noticed while there (devcontainer described as
+    Docker-in-Docker; it is actually `docker-outside-of-docker`, deliberately, per `kind`'s own
+    guidance against DinD when the host already exposes its Docker socket). README.md's
+    "Artifacts"/"Estado actual" sections updated -- both still described Day 0 planning state.
+- **Not modified:** no application source code changed at all -- every module was already fully
+  parameterized for this by existing `application.yml` env var defaults; the Gateway's V2-routing
+  gap noted above is explicitly left alone.
+- **Verification before pushing:** no Docker/kind/kubectl available in this AI's own sandboxed
+  environment (same standing network/tooling limitation declared in every previous PR -- this
+  extends it to container tooling, not just Maven Central) or in the engineer's local
+  `device_bash` shell used to write these files, so this could not be `kind create cluster`'d or
+  even `kubectl apply --dry-run`'d here. What COULD be verified: every YAML file parses as valid
+  YAML; a custom cross-check script (mirroring the Checkstyle-equivalent script used for Java
+  changes all project) confirmed every `secretKeyRef`/`envFrom` in the five app Deployments
+  actually names a key that exists in `01-secrets.yaml`, every `Service` selector matches its
+  `Deployment`'s pod labels, every probe's port is one of its container's declared ports, and the
+  three `NodePort`s declared in the Service manifests exactly match `kind-config.yaml`'s
+  `extraPortMappings`; `bash -n` on `deploy-to-kind.sh`; and a manual line-by-line re-read of the
+  Dockerfile and all 11 manifests. **Not yet confirmed:** whether `kind create cluster` and the
+  full deploy script actually succeed end-to-end (image builds, pod scheduling, Keycloak issuer
+  behavior under `KC_HOSTNAME`, Liquibase running safely with three services pointed at one
+  shared Postgres) -- unlike the Java changes in every previous PR, there is no CI job that
+  exercises this (`ci.yml` runs Maven/Markdown/gitleaks only, not a Docker/kind build), so this
+  depends entirely on the engineer running `./infra/k8s/deploy-to-kind.sh` in their Codespace and
+  reporting back what actually happened -- expect a real round of `kubectl describe`/`kubectl
+  logs` output being needed, the same "ask for the real output" discipline this log has already
+  had to learn twice this project (PR #28, then PR #29's Circuit Breaker fallback bug).
+- **Decision:** pending engineer review AND a real run in the Codespace (see PR).
