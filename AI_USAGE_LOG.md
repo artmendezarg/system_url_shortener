@@ -533,3 +533,45 @@ Continuous log of decisions made during AI-assisted execution (see template and 
   logs` output being needed, the same "ask for the real output" discipline this log has already
   had to learn twice this project (PR #28, then PR #29's Circuit Breaker fallback bug).
 - **Decision:** pending engineer review AND a real run in the Codespace (see PR).
+
+## 2026-09-05 — [Fix] PR #30 — Review feedback: stop committing Secret values in plain YAML
+
+- **Prompt:** review comment from `artmendezarg` on `infra/k8s/01-secrets.yaml` line 47
+  (`KEYCLOAK_ADMIN_PASSWORD: admin_local`): "can you hide this password", plus a review body
+  "Check the passsword validation" — read via `gh api repos/.../pulls/30/comments` and
+  `.../pulls/30/reviews` (`gh pr view --comments` itself failed with an unrelated GraphQL
+  deprecation error about Projects Classic; the REST endpoints worked fine).
+- **Diagnosis:** the value itself was never real — it's the exact same fake dev default already
+  declared in `docker-compose.yml` and called out explicitly in ARCHITECTURE.md section 8.2
+  ("todas las contraseñas ... son valores de desarrollo local inventados"). So the substance of
+  what could leak did not change with this fix. What the review correctly flagged is the
+  *pattern*: a `kind: Secret` manifest, committed to git with a credential-shaped value written
+  directly into it, is precisely the shape that turns into a real leak the day someone reuses this
+  file for an actual deployment and forgets to swap the value out before committing — the YAML
+  file itself doesn't visually distinguish "this is a placeholder" from "this is real". Using
+  `stringData` instead of base64 `data` (the choice made in the original version, for
+  readability) does not change this at all — base64 is not encryption, and either form is
+  equally committed to git history forever.
+- **Fix applied:** deleted `infra/k8s/01-secrets.yaml` entirely. `deploy-to-kind.sh` now generates
+  all three `Secret`s imperatively at deploy time (`kubectl create secret generic --from-literal
+  ... --dry-run=client -o yaml | kubectl apply -f -`), reading from the exact same environment
+  variable names `docker-compose.yml`/`.env.example` already use for these same three passwords
+  (`POSTGRES_PASSWORD`, `RABBITMQ_USER`, `RABBITMQ_PASSWORD`, `KEYCLOAK_ADMIN_PASSWORD`), falling
+  back to the identical declared-fake defaults when unset. The script also sources `.env` from the
+  repo root when present (already gitignored, never committed) before generating the Secrets —
+  the same file `docker-compose` already reads automatically — so a real deployment only ever
+  needs to put a real value in an untracked file, never in a file this or any future PR commits.
+- **Also fixed:** the `keycloak-realm-import` `ConfigMap` was already generated the same way (not
+  a static file) since the PR's first commit, for an unrelated reason (avoiding a hand-duplicated
+  copy of `realm-export.json`'s JSON drifting from the source file) — this fix brings the Secrets
+  into that same already-established pattern rather than introducing a new one.
+- **Verification:** extended the same cross-check script used to verify this directory before
+  pushing (secretKeyRef/envFrom references resolve, Service selectors match Deployment labels,
+  probe ports match containerPorts, NodePorts match `kind-config.yaml`) with a new check that
+  greps every manifest for `kind: Secret` and fails if one is still present as a static file —
+  makes this fix self-enforcing against a future regression, not just a one-time edit.
+- **Not changed:** the actual credential values, their names, or which Kubernetes objects consume
+  them (`postgres-credentials`/`rabbitmq-credentials`/`keycloak-admin-credentials`, same keys) --
+  this is a change to WHERE and HOW the values are introduced, not what they are.
+- **Decision:** Adjusted — fixed on the same branch (`feature/k8s-kind-deployment`), targeted by
+  PR #30, in direct response to review feedback.
